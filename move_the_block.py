@@ -6,23 +6,49 @@ from collections import namedtuple, deque
 
 Action = namedtuple("Action", "posn diff")
 Node = namedtuple("Node", "state parent action")
-class Board:
-    HS, HM, HE = "hs", "hm", "he"
-    VS, VM, VE = "vs", "vm", "ve"
-    GS, GE = "gs", "ge"
-    EMPTY = "__"
-    HORIZONTALS = (HS,HM,HE,GS,GE)
-    VERTICALS = (VS,VM,VE)
+Block = namedtuple("Block", "orient size token")
 
-    def __init__(self, data):
+class Board:
+    ACTION_COUNT = None
+    
+    def __init__(self, data, goal_block):
         self.data = tuple(map(tuple, data))
+        self.goal_block = goal_block
     
     @classmethod
     def from_str(cls, text):
-        data = [line.split(" ") for line in text.split("\n")]
-        data.pop()
-        return Board(data)
+        tokens = [line.split(" ") for line in text.strip().split("\n")]
+        return cls.from_tokens(tokens, "x", "_")
 
+    @classmethod
+    def from_tokens(cls, tokens, goal_token, empty_token):
+        tokens = list(map(list, tokens))
+        goal_block = None
+        tokens_blocks = {}
+        for row in range(6):
+            for col in range(6):
+                token = tokens[row][col]
+                if token == empty_token:
+                    tokens[row][col] = None
+                elif token not in tokens_blocks:
+                    try:
+                        orient = "H" if tokens[row][col+1] == token else "V"
+                    except IndexError:
+                        orient = "V"
+                    # compute size
+                    if orient == "H":
+                        size = 2 if col > 3 or tokens[row][col+2] != token else 3
+                    else:
+                        size = 2 if row > 3 or tokens[row+2][col] != token else 3
+                    block = Block(orient,size,token)
+                    tokens_blocks[token] = block
+                    if token == goal_token:
+                        goal_block = block
+                    tokens[row][col] = block
+                else:
+                    tokens[row][col] = tokens_blocks[token]
+        return cls(tokens, goal_block)
+        
     def __hash__(self):
         return hash(self.data)
     
@@ -33,34 +59,27 @@ class Board:
         row,col = posn
         return self.data[row][col]
 
-    def __str__(self):
-        matr = list(map(list, self.data))
+    def output_char(self):
+        matrix = list(map(list, self.data))
         for row,col in self.posns:
-            value = matr[row][col]
-            if value == self.EMPTY:
-                matr[row][col] = " "
-            elif value in self.HORIZONTALS:
-                matr[row][col] = "═"
+            block = matrix[row][col]
+            if block is None:
+                matrix[row][col] = "_"
             else:
-                matr[row][col] = "║"
-        pp(matr)
-        lines = ["".join(row) for row in matr]
-        top = "┌" + "─"*len(lines[0]) + "┐"
-        bottom = "└" + "─"*len(lines[0]) + "┘"
-        lines = [top] + ["│"+line+"│" for line in lines] + [bottom]
-        return "\n".join(lines)
+                matrix[row][col] = block.token
+        text = "\n".join(" ".join(row) for row in matrix)
+        return text
 
     def search_bfs(self):
         """Returns the sequence of actions which solve the problem"""
+        Board.ACTION_COUNT = 0
         root = Node(state=self, parent=None, action=None)
         frontier = deque([root])
         existing = set()
         count = 0
         while frontier:
             node = frontier.popleft()
-            successors = node.state.successors
-            count += 1
-            for successor, action in successors:
+            for successor, action in node.state.successors:
                 if successor.is_solution:
                     # From the sequence of actions and return it
                     actions = []
@@ -69,7 +88,6 @@ class Board:
                         node = node.parent
                         action = node.action
                     actions.reverse()
-                    print(f"### count=={count}")
                     return actions
                 else:
                     if successor not in existing:
@@ -81,14 +99,14 @@ class Board:
     def is_solution(self):
         row,col = self.goal_block_position
         for col in range(col+2, 6):
-            if not self[row,col] == self.EMPTY:
+            if self[row,col] is not None:
                 return False
         return True
 
     @property
     def goal_block_position(self):
         for posn in self.posns:
-            if self[posn] == self.GS:
+            if self[posn] is self.goal_block:
                 return posn
 
     @property
@@ -105,83 +123,67 @@ class Board:
     @property
     def possible_actions(self):
         actions = []
-        for (row, col), size, direction in self.blocks:
-            if direction == "horizontal":
+        for (row, col), block in self.blocks:
+            if block.orient == "H":
                 for diff in range(-1,-5,-1):
                     dcol = col+diff
-                    if dcol >= 0 and self[row,dcol] == self.EMPTY:
-                        action = Action(posn=(row,col), diff=diff)
+                    if dcol >= 0 and self[row,dcol] is None:
+                        action = Action(posn=(row,col), diff=(0,diff))
                         actions.append(action)
                     else:
                         break
                 for diff in range(1,5):
-                    dcol = col+(size-1)+diff
-                    if dcol <= 5 and self[row,dcol] == self.EMPTY:
-                        action = Action(posn=(row,col), diff=diff)
+                    dcol = col+(block.size-1)+diff
+                    if dcol <= 5 and self[row,dcol] is None:
+                        action = Action(posn=(row,col), diff=(0,diff))
                         actions.append(action)
                     else:
                         break
-            elif direction == "vertical":
-                # 100% analogous to the "horizontal" case
+            else:
+                # analogous to the horizontal case
                 for diff in range(-1,-5,-1):
                     drow = row+diff
-                    if drow >= 0 and self[drow, col] == self.EMPTY:
-                        action = Action(posn=(row,col), diff=diff)
+                    if drow >= 0 and self[drow, col] is None:
+                        action = Action(posn=(row,col), diff=(diff,0))
                         actions.append(action)
                     else:
                         break
                 for diff in range(1,5):
-                    drow = row+(size-1)+diff
-                    if drow <= 5 and self[drow, col] == self.EMPTY:
-                        action = Action(posn=(row,col), diff=diff)
+                    drow = row+(block.size-1)+diff
+                    if drow <= 5 and self[drow, col] is None:
+                        action = Action(posn=(row,col), diff=(diff,0))
                         actions.append(action)
                     else:
                         break
         return actions
     
     def apply_action(self, action):
+        Board.ACTION_COUNT += 1
         new_data = list(map(list, self.data))
-        (row,col),diff = action.posn, action.diff
-        size = None
-        if self[row,col] in (self.GS, self.HS):
-            dr,dc = (0,1)
-            size = 2 if self[row, col+1] in (self.HE, self.GE) else 3
-        else:
-            dr,dc = (1,0)
-            size = 2 if self[row+1, col] == self.VE else 3
-        # extract the components (start, middle, end)
-        components = []
-        for k in range(size):
-            drow, dcol = row+k*dr, col+k*dc
-            components.append(new_data[drow][dcol])
-            new_data[drow][dcol] = self.EMPTY
-        # place it at the correct position
-        row,col = row+dr*diff, col+dc*diff
-        for k in range(size):
-            drow, dcol = row+k*dr, col+k*dc
-            new_data[drow][dcol] = components[k]
-        return Board(new_data)
+        (row,col),(row_diff,col_diff) = action.posn, action.diff
+        block = self[row,col]
+        dr,dc = (0,1) if block.orient == "H" else (1,0)
+        posns = [(row,col)]
+        for _ in range(block.size-1):
+            r,c = posns[-1]
+            posns.append((r+dr,c+dc))
+        for r,c in posns:
+            new_data[r][c] = None
+        for r,c in posns:
+            r,c = r+row_diff,c+col_diff
+            new_data[r][c] = block
+        return Board(new_data, self.goal_block)
 
     @property
     def blocks(self):
-        """Returns a list of triples (POSN, SIZE, DIRECTION), where POSN is the
-        beginning position of some block (the leftmost square for "horizontal"
-        blocks and the topmost for "vertical" blocks) whose size is SIZE and
-        whose direction is DIRECTION. A possible triple is ((2,2),3,"horizontal")"""
+        """Returns a list of pairs (POSN, BLOCK)"""
         result = []
+        blocks = set()
         for row,col in self.posns:
-            if self[row,col] == self.HS:
-                if self[row,col+1] == self.HE:
-                    result.append(((row,col),2,"horizontal"))
-                else:
-                    result.append(((row,col),3,"horizontal"))
-            if self[row,col] == self.GS:
-                result.append(((row,col),2,"horizontal"))
-            elif self[row,col] == self.VS:
-                if self[row+1,col] == self.VE:
-                    result.append(((row,col),2,"vertical"))
-                else:
-                    result.append(((row,col),3,"vertical"))
+            block = self[row,col]
+            if block is not None and block not in blocks:
+                result.append(((row,col),block))
+                blocks.add(block)
         return result
 
 #════════════════════════════════════════
@@ -192,6 +194,39 @@ def get_board():
     text = open(PATH).read()
     return Board.from_str(text)
     
-def main():
+def main_char(cols):
     board = get_board()
-    pp(board.search_bfs())
+    actions = board.search_bfs()
+    print(f"### The solution has {len(actions)} actions")
+    print(f"### It took {Board.ACTION_COUNT} actions to find this solution")
+    texts = [board.output_char()]
+    for action in actions:
+        char = board[action.posn].token
+        board = board.apply_action(action)
+        text = board.output_char().replace(char, char.upper())
+        texts.append(text)
+    texts = [text.split("\n") for text in texts]
+    board_rows = []
+    i = 0
+    while i < len(texts):
+        row = []
+        for j in range(min(len(texts)-i,cols)):
+            row.append(texts[i])
+            i += 1
+        board_rows.append(row)
+    empty_board = [" " * 11 for _ in range(6)]
+    while len(board_rows[-1]) % cols != 0:
+        board_rows[-1].append(empty_board)
+    print(("═"*13+"╦") * (cols-1) + ("═"*13))
+    text_rows = []
+    for board_row in board_rows:
+        lines = []
+        for line_index in range(6):
+            line = " " + " ║ ".join(board[line_index] for board in board_row) + " "
+            lines.append(line)
+        text_rows.append("\n".join(lines))
+    row_separator = "\n" + ("═"*13+"╬") * (cols-1) + ("═"*13) + "\n"
+    print(row_separator.join(text_rows))
+    footer = ("═"*13+"╩") * (cols-1) + ("═"*13)
+    print(footer)
+        
