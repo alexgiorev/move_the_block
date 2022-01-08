@@ -82,11 +82,10 @@ class Board:
             for successor, action in node.state.successors:
                 if successor.is_solution:
                     # From the sequence of actions and return it
-                    actions = []
-                    while action is not None:
-                        actions.append(action)
+                    actions = [action]
+                    while node.action is not None:
+                        actions.append(node.action)
                         node = node.parent
-                        action = node.action
                     actions.reverse()
                     return actions
                 else:
@@ -193,7 +192,12 @@ PATH = "board"
 def get_board():
     text = open(PATH).read()
     return Board.from_str(text)
-    
+
+def apply_actions(board, actions):
+    for action in actions:
+        board = board.apply_action(action)
+    return board
+
 def main_char(cols):
     board = get_board()
     actions = board.search_bfs()
@@ -229,4 +233,3 @@ def main_char(cols):
     print(row_separator.join(text_rows))
     footer = ("═"*13+"╩") * (cols-1) + ("═"*13)
     print(footer)
-        
