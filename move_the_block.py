@@ -3,6 +3,8 @@ import networkx
 import itertools
 import os.path
 import math
+import shutil
+import pdb
 
 from collections import namedtuple, deque
 from pprint import pprint as pp
@@ -263,7 +265,7 @@ class BoardImage:
     BLOCK_H2 = Image.open(os.path.join(DIR, "2x1.tiff"))
     BLOCK_H3 = Image.open(os.path.join(DIR, "3x1.tiff"))
     BLOCK_V2 = Image.open(os.path.join(DIR, "1x2.tiff"))
-    BLOCK_V3 = Image.open(os.path.join(DIR, "1x2.tiff"))
+    BLOCK_V3 = Image.open(os.path.join(DIR, "1x3.tiff"))
     BLOCK_GOAL = Image.open(os.path.join(DIR, "goal.tiff"))
     TYPE_TO_IMG = {"H2": BLOCK_H2,
                    "H3": BLOCK_H3,
@@ -311,7 +313,18 @@ class BoardImage:
         x += x_offset
         y += y_offset
         self.board.paste(block_img,(x,y))
-    
+
+def create_board():
+    square = Image.open("images/square.jpg")
+    unit_length = square.width
+    side_length = unit_length * 6 - 5
+    board = Image.new("RGB", (side_length,side_length))
+    for row,col in itertools.product(range(6),range(6)):
+        x = (unit_length-1)*row
+        y = (unit_length-1)*col
+        board.paste(square, (x,y))
+    board.save("images/board.tiff")
+
 #════════════════════════════════════════
 # misc
 
@@ -361,22 +374,27 @@ def main_char(cols):
     footer = ("═"*13+"╩") * (cols-1) + ("═"*13)
     print(footer)
 
-#════════════════════════════════════════
-# image output
+def main_image():
+    board = get_board()
+    actions = board.search_bfs()
+    print(f"### The solution has {len(actions)} actions")
+    print(f"### It took {Board.ACTION_COUNT} actions to find this solution")    
+    images = [board.image()]
+    for action in actions:
+        board = board.apply_action(action)
+        images.append(board.image())
+    name_length = 4+len(str(len(images)-1))
+    OUTPUT_DIR = "image_output"
+    try: shutil.rmtree(OUTPUT_DIR)
+    except FileNotFoundError: pass
+    os.mkdir(OUTPUT_DIR)
+    for i,image in enumerate(images):
+        file_name = f"{i}.jpg".rjust(name_length,"0")
+        path = os.path.join(OUTPUT_DIR,file_name)
+        image.save(path,quality=100)
 
-def create_board():
-    square = Image.open("square.jpg")
-    unit_length = square.width
-    side_length = unit_length * 6 - 5
-    board = Image.new("RGB", (side_length,side_length))
-    for row,col in itertools.product(range(6),range(6)):
-        x = (unit_length-1)*row
-        y = (unit_length-1)*col
-        board.paste(square, (x,y))
-    board.save("board.tiff")
-
 #════════════════════════════════════════
-# graphing
+# graphing the state space
 
 def get_graph():
     board = get_board()
@@ -451,8 +469,12 @@ def graph_dot(graph):
 
 #════════════════════════════════════════
 # scratch scripts
+def scratch():
+    bimg = BoardImage()
+    bimg.draw("V2",(5,3))
+    bimg.board.show()
 
 def scratch():
     board = get_board()
-    img = board.output_img()
+    img = board.image()
     img.show()
