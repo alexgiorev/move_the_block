@@ -1,15 +1,35 @@
 import sys
-from pprint import pprint as pp
+import networkx
 import itertools
 import os.path
+import math
+
 from collections import namedtuple, deque
+from pprint import pprint as pp
+from PIL import Image
 
 Action = namedtuple("Action", "posn diff")
-Node = namedtuple("Node", "state parent action")
 Block = namedtuple("Block", "orient size token")
 
+class Node:
+    def __init__(self, state, parent, action, name="X"):
+        self.state = state
+        self.parent = parent
+        self.action = action
+        self.name = name
+        self.children = []
+        if parent is not None:
+            parent.children.append(self)
+
+    def serialize_for_emacs(self):
+        if not self.children:
+            return self.name
+        children = (child.serialize_for_emacs() for child in self.children)
+        strings = itertools.chain([f"({self.name}"],children,[")"])
+        return " ".join(strings)
+
 class Board:
-    ACTION_COUNT = None
+    ACTION_COUNT = 0
     
     def __init__(self, data, goal_block):
         self.data = tuple(map(tuple, data))
@@ -70,29 +90,78 @@ class Board:
         text = "\n".join(" ".join(row) for row in matrix)
         return text
 
+    def image(self):
+        board_img = BoardImage()
+        for (row,col),block in self.blocks:
+            orient = "G" if block is self.goal_block else block.orient
+            block_type = f"{orient}{block.size}"
+            board_img.draw(block_type,(col,row))
+        return board_img.board
+
+    def state_space(self):
+        graph = networkx.Graph()
+        graph.add_nodes_from([(self,{"initial":True})])
+        state_id = 0
+        frontier = deque([self])
+        expanded = set()
+        while frontier:
+            state = frontier.popleft()
+            if state in expanded:
+                continue
+            successors = list(state.successors)
+            #════════════════════
+            # expand
+            graph.nodes[state]["id"] = state_id
+            graph.nodes[state]["is_solution"] = state.is_solution
+            state_id += 1
+            for successor, action in successors:
+                graph.add_edges_from([(state,successor)])
+            expanded.add(state)
+            #════════════════════
+            # BFS
+            for successor, action in successors:
+                frontier.append(successor)
+        return graph
+    
     def search_bfs(self):
         """Returns the sequence of actions which solve the problem"""
         Board.ACTION_COUNT = 0
         root = Node(state=self, parent=None, action=None)
+        tree_serializations = []
         frontier = deque([root])
         existing = set()
         count = 0
         while frontier:
             node = frontier.popleft()
+            node.name = "X"
             for successor, action in node.state.successors:
                 if successor.is_solution:
+                    # Add the child for the sake of serialization and serialize
+                    child = Node(state=successor, parent=node, action=action,name="S")
+                    tree_serializations.append(root.serialize_for_emacs())                    
                     # From the sequence of actions and return it
                     actions = [action]
                     while node.action is not None:
                         actions.append(node.action)
                         node = node.parent
+                    with open("serializations","w") as f:
+                        f.write("(")
+                        f.write("\n".join(tree_serializations))
+                        f.write(")")
                     actions.reverse()
                     return actions
                 else:
                     if successor not in existing:
-                        child = Node(state=successor, parent=node, action=action)
+                        child = Node(state=successor, parent=node, action=action,name="F")
+                        tree_serializations.append(root.serialize_for_emacs())
                         frontier.append(child)
                         existing.add(successor)
+
+
+    def search_best_first(self, ef):
+        """EF is an "evaluation function". It accepts a Node as an argument and
+        returns the priority of the node."""
+        raise NotImplementedError
 
     @property
     def is_solution(self):
@@ -185,8 +254,66 @@ class Board:
                 blocks.add(block)
         return result
 
+# For image output
+class BoardImage:
+    DIR = "images"
+    BOARD = Image.open(os.path.join(DIR, "board.tiff"))
+    SQUARE = Image.open(os.path.join(DIR, "square.tiff"))
+    UNIT_LENGTH = SQUARE.width
+    BLOCK_H2 = Image.open(os.path.join(DIR, "2x1.tiff"))
+    BLOCK_H3 = Image.open(os.path.join(DIR, "3x1.tiff"))
+    BLOCK_V2 = Image.open(os.path.join(DIR, "1x2.tiff"))
+    BLOCK_V3 = Image.open(os.path.join(DIR, "1x2.tiff"))
+    BLOCK_GOAL = Image.open(os.path.join(DIR, "goal.tiff"))
+    TYPE_TO_IMG = {"H2": BLOCK_H2,
+                   "H3": BLOCK_H3,
+                   "G2": BLOCK_GOAL,
+                   "V2": BLOCK_V2,
+                   "V3": BLOCK_V3}
+
+    @classmethod
+    def create_board_image(cls):
+        square = Image.open("square.jpg")
+        unit_length = square.width
+        side_length = unit_length * 6 - 5
+        board = Image.new("RGB", (side_length,side_length))
+        for row,col in itertools.product(range(6),range(6)):
+            xy = cls.get_pixel_xy((col,row))
+            board.paste(square, (x,y))
+        board.save("board.tiff")
+
+    @classmethod
+    def get_pixel_xy(cls,xy):
+        x,y = xy
+        return ((cls.UNIT_LENGTH-1)*x,
+                (cls.UNIT_LENGTH-1)*y)
+
+    def __init__(self):
+        self.board = self.BOARD.copy()
+        
+    def draw(self,type,xy):
+        """Draw a block on SELF at XY. TYPE is a string of the form "OS", where
+        the "O" is the orientation ("H" for horizontal, "V" for vertical and "G"
+        for goal block) and the "S" is the size, one of "2" or "3". So a
+        possible format string is "H3" or "V2" or "G2" (but not "G3" as the goal
+        block is always size 2)."""
+        orientation, size = type[0].upper(),int(type[1])
+        x,y = self.get_pixel_xy(xy)
+        block_img = self.TYPE_TO_IMG[type]
+        if orientation in "HG":
+            frame_width = self.UNIT_LENGTH*size-size+1
+            frame_height = self.UNIT_LENGTH
+        else:
+            frame_width = self.UNIT_LENGTH
+            frame_height = self.UNIT_LENGTH*size-size+1
+        x_offset = (frame_width-block_img.width)//2
+        y_offset = (frame_height-block_img.height)//2
+        x += x_offset
+        y += y_offset
+        self.board.paste(block_img,(x,y))
+    
 #════════════════════════════════════════
-# main
+# misc
 
 PATH = "board"
 def get_board():
@@ -233,3 +360,99 @@ def main_char(cols):
     print(row_separator.join(text_rows))
     footer = ("═"*13+"╩") * (cols-1) + ("═"*13)
     print(footer)
+
+#════════════════════════════════════════
+# image output
+
+def create_board():
+    square = Image.open("square.jpg")
+    unit_length = square.width
+    side_length = unit_length * 6 - 5
+    board = Image.new("RGB", (side_length,side_length))
+    for row,col in itertools.product(range(6),range(6)):
+        x = (unit_length-1)*row
+        y = (unit_length-1)*col
+        board.paste(square, (x,y))
+    board.save("board.tiff")
+
+#════════════════════════════════════════
+# graphing
+
+def get_graph():
+    board = get_board()
+    return board.state_space()
+
+def graph_dot(graph):
+    lines = ["graph {"]
+    for node,attrs in graph.nodes.items():
+        state_id = attrs["id"]
+        if attrs.get("initial"):
+            color = "red"
+        elif attrs.get("is_solution"):
+            color = "blue"
+        else:
+            color = "white"
+        lines.append(f'    {state_id} [label="", color={color}];')
+    for (v1,v2),attrs in graph.edges.items():
+        id1, id2 = graph.nodes[v1]["id"], graph.nodes[v2]["id"]
+        lines.append(f'    {id1}--{id2};')
+    lines.append["}"]
+
+def test_dot():
+    board = get_board()
+    graph = board.state_space()
+    with open("state_space.dot", "w") as f:
+        f.write(graph_dot(graph))
+
+def test_org():
+    board = get_board()
+    graph = board.state_space()
+    with open("state_space.org", "w") as f:
+        f.write(graph_org_mode(graph))
+
+def graph_org_mode(graph):
+    lines = ["#+TODO: INITIAL SOLUTION"]
+    for node,attrs in graph.nodes.items():
+        state_id = attrs["id"]
+        line = None
+        if attrs.get("initial"):
+            line = f"* INITIAL {state_id}"
+        elif attrs.get("is_solution"):
+            line = f"* SOLUTION {state_id}"
+        else:
+            line = f"* {state_id}"
+        lines.append(line)
+        for neighbor in graph.neighbors(node):
+            neigh_id = graph.nodes[neighbor]["id"]
+            lines.append(f"** [[{neigh_id}]]")
+    return "\n".join(lines)
+
+def graph_plt(graph):
+    import matplotlib.pyplot as plt
+    networkx.draw(graph)
+    plt.show()
+    
+def graph_dot(graph):
+    lines = ["graph {"]
+    for node,attrs in graph.nodes.items():
+        state_id = attrs["id"]
+        if attrs.get("initial"):
+            color = "red"
+        elif attrs.get("is_solution"):
+            color = "blue"
+        else:
+            color = "white"
+        lines.append(f'    {state_id} [label="", color={color}];')
+    for (v1,v2),attrs in graph.edges.items():
+        id1, id2 = graph.nodes[v1]["id"], graph.nodes[v2]["id"]
+        lines.append(f'    {id1}--{id2};')
+    lines.append("}"); lines.append("")
+    return "\n".join(lines)
+
+#════════════════════════════════════════
+# scratch scripts
+
+def scratch():
+    board = get_board()
+    img = board.output_img()
+    img.show()
