@@ -39,7 +39,7 @@ class Board:
     
     @classmethod
     def from_str(cls, text):
-        tokens = [line.split(" ") for line in text.strip().split("\n")]
+        tokens = [line for line in text.strip().split("\n")]
         return cls.from_tokens(tokens, "x", "_")
 
     @classmethod
@@ -328,10 +328,16 @@ def create_board():
 #════════════════════════════════════════
 # misc
 
-PATH = "board"
 def get_board():
+    PATH = "board.txt"
     text = open(PATH).read()
     return Board.from_str(text)
+
+def get_board_and_actions():
+    board = get_board()
+    actions = board.search_bfs()
+    print(f"### The solution has {len(actions)} actions")
+    print(f"### It took {Board.ACTION_COUNT} actions to find this solution")
 
 def apply_actions(board, actions):
     for action in actions:
@@ -339,10 +345,7 @@ def apply_actions(board, actions):
     return board
 
 def main_char(cols):
-    board = get_board()
-    actions = board.search_bfs()
-    print(f"### The solution has {len(actions)} actions")
-    print(f"### It took {Board.ACTION_COUNT} actions to find this solution")
+    board, actions = get_board_and_actions()
     texts = [board.output_char()]
     for action in actions:
         char = board[action.posn].token
@@ -375,10 +378,7 @@ def main_char(cols):
     print(footer)
 
 def main_image():
-    board = get_board()
-    actions = board.search_bfs()
-    print(f"### The solution has {len(actions)} actions")
-    print(f"### It took {Board.ACTION_COUNT} actions to find this solution")    
+    board, actions = get_board_and_actions()
     images = [board.image()]
     for action in actions:
         board = board.apply_action(action)
