@@ -328,24 +328,25 @@ def create_board():
 #════════════════════════════════════════
 # misc
 
-def get_board():
-    PATH = "board.txt"
-    text = open(PATH).read()
+def get_board(name):
+    path = os.path.join("boards",f"{name.lower()}.txt")
+    text = open(path).read()
     return Board.from_str(text)
 
-def get_board_and_actions():
-    board = get_board()
+def get_board_and_actions(name):
+    board = get_board(name)
     actions = board.search_bfs()
     print(f"### The solution has {len(actions)} actions")
     print(f"### It took {Board.ACTION_COUNT} actions to find this solution")
+    return board,actions
 
 def apply_actions(board, actions):
     for action in actions:
         board = board.apply_action(action)
     return board
 
-def main_char(cols):
-    board, actions = get_board_and_actions()
+def main_char(name,cols=4):
+    board, actions = get_board_and_actions(name)
     texts = [board.output_char()]
     for action in actions:
         char = board[action.posn].token
@@ -377,8 +378,8 @@ def main_char(cols):
     footer = ("═"*13+"╩") * (cols-1) + ("═"*13)
     print(footer)
 
-def main_image():
-    board, actions = get_board_and_actions()
+def main_image(name):
+    board, actions = get_board_and_actions(name)
     images = [board.image()]
     for action in actions:
         board = board.apply_action(action)
