@@ -31,8 +31,6 @@ class Node:
         return " ".join(strings)
 
 class Board:
-    ACTION_COUNT = 0
-    
     def __init__(self, data, goal_block):
         self.data = tuple(map(tuple, data))
         self.goal_block = goal_block
@@ -188,7 +186,6 @@ class Board:
         return actions
     
     def apply_action(self, action):
-        Board.ACTION_COUNT += 1
         new_data = list(map(list, self.data))
         (row,col),(row_diff,col_diff) = action.posn, action.diff
         block = self[row,col]
@@ -222,7 +219,6 @@ class Searcher:
         
     def bfs(self):
         """Returns the sequence of actions which solve the problem"""
-        Board.ACTION_COUNT = 0
         root = Node(state=self.board, parent=None, action=None)
         tree_serializations = []
         frontier = deque([root])
@@ -259,7 +255,6 @@ class Searcher:
         """EF is an "evaluation function". It accepts a Node as an argument and
         returns the priority of the node."""
         raise NotImplementedError
-    
     
 # For image output
 class BoardImage:
@@ -319,17 +314,6 @@ class BoardImage:
         y += y_offset
         self.board.paste(block_img,(x,y))
 
-def create_board():
-    square = Image.open("images/square.jpg")
-    unit_length = square.width
-    side_length = unit_length * 6 - 5
-    board = Image.new("RGB", (side_length,side_length))
-    for row,col in itertools.product(range(6),range(6)):
-        x = (unit_length-1)*row
-        y = (unit_length-1)*col
-        board.paste(square, (x,y))
-    board.save("images/board.tiff")
-
 # misc
 #════════════════════════════════════════
 
@@ -341,8 +325,6 @@ def get_board(name):
 def get_board_and_actions(name):
     board = get_board(name)
     actions = Searcher(board).bfs()
-    print(f"### The solution has {len(actions)} actions")
-    print(f"### It took {Board.ACTION_COUNT} actions to find this solution")
     return board,actions
 
 def apply_actions(board, actions):
