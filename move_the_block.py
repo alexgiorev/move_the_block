@@ -390,7 +390,7 @@ def main_image(name):
         board = board.apply_action(action)
         images.append(board.image())
     name_length = 4+len(str(len(images)-1))
-    OUTPUT_DIR = "image_output"
+    OUTPUT_DIR = os.path.join("boards",f"{name}_solution")
     try: shutil.rmtree(OUTPUT_DIR)
     except FileNotFoundError: pass
     os.mkdir(OUTPUT_DIR)
