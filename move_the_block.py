@@ -124,46 +124,6 @@ class Board:
             for successor, action in successors:
                 frontier.append(successor)
         return graph
-    
-    def search_bfs(self):
-        """Returns the sequence of actions which solve the problem"""
-        Board.ACTION_COUNT = 0
-        root = Node(state=self, parent=None, action=None)
-        tree_serializations = []
-        frontier = deque([root])
-        existing = set()
-        count = 0
-        while frontier:
-            node = frontier.popleft()
-            node.name = "X"
-            for successor, action in node.state.successors:
-                if successor.is_solution:
-                    # Add the child for the sake of serialization and serialize
-                    child = Node(state=successor, parent=node, action=action,name="S")
-                    tree_serializations.append(root.serialize_for_emacs())                    
-                    # From the sequence of actions and return it
-                    actions = [action]
-                    while node.action is not None:
-                        actions.append(node.action)
-                        node = node.parent
-                    with open("serializations","w") as f:
-                        f.write("(")
-                        f.write("\n".join(tree_serializations))
-                        f.write(")")
-                    actions.reverse()
-                    return actions
-                else:
-                    if successor not in existing:
-                        child = Node(state=successor, parent=node, action=action,name="F")
-                        tree_serializations.append(root.serialize_for_emacs())
-                        frontier.append(child)
-                        existing.add(successor)
-
-
-    def search_best_first(self, ef):
-        """EF is an "evaluation function". It accepts a Node as an argument and
-        returns the priority of the node."""
-        raise NotImplementedError
 
     @property
     def is_solution(self):
@@ -256,6 +216,51 @@ class Board:
                 blocks.add(block)
         return result
 
+class Searcher:
+    def __init__(self,board):
+        self.board = board
+        
+    def bfs(self):
+        """Returns the sequence of actions which solve the problem"""
+        Board.ACTION_COUNT = 0
+        root = Node(state=self.board, parent=None, action=None)
+        tree_serializations = []
+        frontier = deque([root])
+        existing = set()
+        count = 0
+        while frontier:
+            node = frontier.popleft()
+            node.name = "X"
+            for successor, action in node.state.successors:
+                if successor.is_solution:
+                    # Add the child for the sake of serialization and serialize
+                    child = Node(state=successor, parent=node, action=action,name="S")
+                    tree_serializations.append(root.serialize_for_emacs())                    
+                    # From the sequence of actions and return it
+                    actions = [action]
+                    while node.action is not None:
+                        actions.append(node.action)
+                        node = node.parent
+                    with open("serializations","w") as f:
+                        f.write("(")
+                        f.write("\n".join(tree_serializations))
+                        f.write(")")
+                    actions.reverse()
+                    return actions
+                else:
+                    if successor not in existing:
+                        child = Node(state=successor, parent=node, action=action,name="F")
+                        tree_serializations.append(root.serialize_for_emacs())
+                        frontier.append(child)
+                        existing.add(successor)
+
+
+    def search_best_first(self, ef):
+        """EF is an "evaluation function". It accepts a Node as an argument and
+        returns the priority of the node."""
+        raise NotImplementedError
+    
+    
 # For image output
 class BoardImage:
     DIR = "images"
@@ -325,8 +330,8 @@ def create_board():
         board.paste(square, (x,y))
     board.save("images/board.tiff")
 
-#════════════════════════════════════════
 # misc
+#════════════════════════════════════════
 
 def get_board(name):
     path = os.path.join("boards",f"{name.lower()}.txt")
@@ -335,7 +340,7 @@ def get_board(name):
 
 def get_board_and_actions(name):
     board = get_board(name)
-    actions = board.search_bfs()
+    actions = Searcher(board).bfs()
     print(f"### The solution has {len(actions)} actions")
     print(f"### It took {Board.ACTION_COUNT} actions to find this solution")
     return board,actions
@@ -394,40 +399,12 @@ def main_image(name):
         path = os.path.join(OUTPUT_DIR,file_name)
         image.save(path,quality=100)
 
-#════════════════════════════════════════
 # graphing the state space
+#════════════════════════════════════════
 
 def get_graph():
     board = get_board()
     return board.state_space()
-
-def graph_dot(graph):
-    lines = ["graph {"]
-    for node,attrs in graph.nodes.items():
-        state_id = attrs["id"]
-        if attrs.get("initial"):
-            color = "red"
-        elif attrs.get("is_solution"):
-            color = "blue"
-        else:
-            color = "white"
-        lines.append(f'    {state_id} [label="", color={color}];')
-    for (v1,v2),attrs in graph.edges.items():
-        id1, id2 = graph.nodes[v1]["id"], graph.nodes[v2]["id"]
-        lines.append(f'    {id1}--{id2};')
-    lines.append["}"]
-
-def test_dot():
-    board = get_board()
-    graph = board.state_space()
-    with open("state_space.dot", "w") as f:
-        f.write(graph_dot(graph))
-
-def test_org():
-    board = get_board()
-    graph = board.state_space()
-    with open("state_space.org", "w") as f:
-        f.write(graph_org_mode(graph))
 
 def graph_org_mode(graph):
     lines = ["#+TODO: INITIAL SOLUTION"]
@@ -468,14 +445,8 @@ def graph_dot(graph):
     lines.append("}"); lines.append("")
     return "\n".join(lines)
 
-#════════════════════════════════════════
 # scratch scripts
-def scratch():
-    bimg = BoardImage()
-    bimg.draw("V2",(5,3))
-    bimg.board.show()
+#════════════════════════════════════════
 
 def scratch():
-    board = get_board()
-    img = board.image()
-    img.show()
+    pass
