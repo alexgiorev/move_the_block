@@ -1,0 +1,1 @@
+Finding optimal solutions for [[https://play.google.com/store/apps/details?id=com.bitmango.go.unblockcasual&hl=bg&gl=US][Move the Block]]. You can see example solutions in =boards/=
