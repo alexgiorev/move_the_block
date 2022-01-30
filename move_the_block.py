@@ -302,20 +302,19 @@ def find_solution(name):
     board = get_board(name)
     return Searcher(board).bfs()
 
-def image_solution(name):
+def image_solution(name, output_dir):
     solution, search_tree = find_solution(name)
     images = [board.image() for board in solution]
     name_length = 4+len(str(len(images)-1))
     print(f"### search_tree has {len(search_tree.nodes)} nodes")
-    OUTPUT_DIR = os.path.join("boards",f"{name}_solution")
-    try: shutil.rmtree(OUTPUT_DIR)
+    output_dir = output_dir or os.path.join("boards",f"{name}_solution")
+    try: shutil.rmtree(output_dir)
     except FileNotFoundError: pass
-    os.mkdir(OUTPUT_DIR)
+    os.mkdir(output_dir)
     for i,image in enumerate(images):
         file_name = f"{i}.jpg".rjust(name_length,"0")
-        path = os.path.join(OUTPUT_DIR,file_name)
+        path = os.path.join(output_dir,file_name)
         image.save(path,quality=100)
-    return solution, search_tree
 
 # graphing the state space
 #════════════════════════════════════════
