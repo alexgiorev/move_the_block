@@ -73,6 +73,7 @@ class Board:
         text = "\n".join(" ".join(row) for row in matrix)
         return text
 
+    @property
     def image(self):
         board_img = BoardImage()
         for (row,col),block in self.blocks:
@@ -81,6 +82,7 @@ class Board:
             board_img.draw(block_type,(col,row))
         return board_img.board
 
+    @property
     def state_space(self):
         try: return self._state_space
         except AttributeError: pass
@@ -304,7 +306,7 @@ def find_solution(name):
 
 def image_solution(name, output_dir):
     solution, search_tree = find_solution(name)
-    images = [board.image() for board in solution]
+    images = [board.image for board in solution]
     name_length = 4+len(str(len(images)-1))
     print(f"### search_tree has {len(search_tree.nodes)} nodes")
     output_dir = output_dir or os.path.join("boards",f"{name}_solution")
@@ -316,10 +318,10 @@ def image_solution(name, output_dir):
         path = os.path.join(output_dir,file_name)
         image.save(path,quality=100)
 
-# graphing the state space
+# graphing
 #════════════════════════════════════════
 
-def graph_org_mode(board):
+def state_space_org_mode(board):
     graph = board.state_space
     lines = ["#+TODO: INITIAL SOLUTION"]
     for node,attrs in graph.nodes.items():
@@ -337,13 +339,13 @@ def graph_org_mode(board):
             lines.append(f"** [[{neigh_id}]]")
     return "\n".join(lines)
 
-def graph_plt(board):
+def state_space_plt(board):
     import matplotlib.pyplot as plt
     graph = board.state_space
     nx.draw(graph)
     plt.show()
     
-def graph_dot(board):
+def state_space_dot(board):
     graph = board.state_space
     lines = ["graph {"]
     for node,attrs in graph.nodes.items():
@@ -360,6 +362,26 @@ def graph_dot(board):
         lines.append(f'    {id1}--{id2};')
     lines.append("}"); lines.append("")
     return "\n".join(lines)
+
+def search_tree_dot(board, path):
+    _, search_tree = Searcher(board).bfs()
+    lines = ["digraph {"]
+    for (node,attrs),nid in zip(search_tree.nodes.items(),
+                                itertools.count()):
+        attrs["id"] = nid
+        lines.append(f'    {nid} [label=""];')
+    for n1, n2 in graph.edges:
+        id1, id2 = graph.nodes[n1]["id"], graph.nodes[n2]["id"]
+        lines.append(f'    {id1}->{id2};')
+    lines.append("}"); lines.append("")
+    with open(path,"w") as f:
+        f.write("\n".join(lines))
+
+def search_tree_plt(board):
+    import matplotlib.pyplot as plt
+    tree = Searcher(board).bfs()
+    nx.draw(tree)
+    plt.show()
 
 # scratch scripts
 #════════════════════════════════════════
