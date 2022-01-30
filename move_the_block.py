@@ -1,5 +1,5 @@
 import sys
-import networkx
+import networkx as nx
 import itertools
 import os.path
 import math
@@ -13,28 +13,11 @@ from PIL import Image
 Action = namedtuple("Action", "posn diff")
 Block = namedtuple("Block", "orient size token")
 
-class Node:
-    def __init__(self, state, parent, action, name="X"):
-        self.state = state
-        self.parent = parent
-        self.action = action
-        self.name = name
-        self.children = []
-        if parent is not None:
-            parent.children.append(self)
-
-    def serialize_for_emacs(self):
-        if not self.children:
-            return self.name
-        children = (child.serialize_for_emacs() for child in self.children)
-        strings = itertools.chain([f"({self.name}"],children,[")"])
-        return " ".join(strings)
-
 class Board:
     def __init__(self, data, goal_block):
         self.data = tuple(map(tuple, data))
         self.goal_block = goal_block
-    
+
     @classmethod
     def from_str(cls, text):
         tokens = [line for line in text.strip().split("\n")]
@@ -99,28 +82,32 @@ class Board:
         return board_img.board
 
     def state_space(self):
-        graph = networkx.Graph()
-        graph.add_nodes_from([(self,{"initial":True})])
-        state_id = 0
+        try: return self._state_space
+        except AttributeError: pass
+        graph = nx.Graph()
+        graph.add_node(self)
+        graph.graph["initial"] = self
+        board_id = 0
         frontier = deque([self])
         expanded = set()
         while frontier:
-            state = frontier.popleft()
-            if state in expanded:
+            board = frontier.popleft()
+            if board in expanded:
                 continue
-            successors = list(state.successors)
+            successors = list(board.successors)
             #════════════════════
             # expand
-            graph.nodes[state]["id"] = state_id
-            graph.nodes[state]["is_solution"] = state.is_solution
-            state_id += 1
-            for successor, action in successors:
-                graph.add_edges_from([(state,successor)])
-            expanded.add(state)
+            attrs = graph.nodes[board]
+            attrs["id"] = board_id; board_id += 1
+            attrs["is_solution"] = board.is_solution
+            for successor in successors:
+                graph.add_edges_from([(board,successor)])
+            expanded.add(board)
             #════════════════════
             # BFS
-            for successor, action in successors:
+            for successor in successors:
                 frontier.append(successor)
+        self._state_space = graph
         return graph
 
     @property
@@ -145,7 +132,7 @@ class Board:
     def successors(self):
         """Returns a list of pairs (SUCCESSOR, ACTION),
         where applying ACTION on SELF will result in SUCCESSOR"""
-        return [(self.apply_action(action), action)
+        return [self.apply_action(action)
                 for action in self.possible_actions]
             
     @property
@@ -218,44 +205,33 @@ class Searcher:
         self.board = board
         
     def bfs(self):
-        """Returns the sequence of actions which solve the problem"""
-        root = Node(state=self.board, parent=None, action=None)
-        tree_serializations = []
-        frontier = deque([root])
-        existing = set()
-        count = 0
+        """Returns a sequence of states beginning with SELF.BOARD and ending
+        with a goal state, as well as the search tree as it was at the time the
+        solution was found."""
+        search_tree = nx.DiGraph()
+        search_tree.add_node(self.board)
+        frontier = deque([self.board])
+        expanded = set()
         while frontier:
-            node = frontier.popleft()
-            node.name = "X"
-            for successor, action in node.state.successors:
+            board = frontier.popleft()
+            if board in expanded:
+                continue
+            for successor in board.successors:
                 if successor.is_solution:
-                    # Add the child for the sake of serialization and serialize
-                    child = Node(state=successor, parent=node, action=action,name="S")
-                    tree_serializations.append(root.serialize_for_emacs())                    
-                    # From the sequence of actions and return it
-                    actions = [action]
-                    while node.action is not None:
-                        actions.append(node.action)
-                        node = node.parent
-                    with open("serializations","w") as f:
-                        f.write("(")
-                        f.write("\n".join(tree_serializations))
-                        f.write(")")
-                    actions.reverse()
-                    return actions
-                else:
-                    if successor not in existing:
-                        child = Node(state=successor, parent=node, action=action,name="F")
-                        tree_serializations.append(root.serialize_for_emacs())
-                        frontier.append(child)
-                        existing.add(successor)
+                    search_tree.add_edge(board,successor)
+                    path = [successor]
+                    while board is not None:
+                        path.append(board)
+                        board = next(search_tree.predecessors(board),None)
+                    path.reverse()
+                    return path, search_tree
+                elif (successor not in search_tree.nodes and
+                      successor not in expanded):
+                    search_tree.add_edge(board,successor)
+                    frontier.append(successor)
+            expanded.add(board)
+        return None, search_tree
 
-
-    def search_best_first(self, ef):
-        """EF is an "evaluation function". It accepts a Node as an argument and
-        returns the priority of the node."""
-        raise NotImplementedError
-    
 # For image output
 class BoardImage:
     DIR = "images"
@@ -322,56 +298,15 @@ def get_board(name):
     text = open(path).read()
     return Board.from_str(text)
 
-def get_board_and_actions(name):
+def find_solution(name):
     board = get_board(name)
-    actions = Searcher(board).bfs()
-    return board,actions
+    return Searcher(board).bfs()
 
-def apply_actions(board, actions):
-    for action in actions:
-        board = board.apply_action(action)
-    return board
-
-def main_char(name,cols=4):
-    board, actions = get_board_and_actions(name)
-    texts = [board.output_char()]
-    for action in actions:
-        char = board[action.posn].token
-        board = board.apply_action(action)
-        text = board.output_char().replace(char, char.upper())
-        texts.append(text)
-    texts = [text.split("\n") for text in texts]
-    board_rows = []
-    i = 0
-    while i < len(texts):
-        row = []
-        for j in range(min(len(texts)-i,cols)):
-            row.append(texts[i])
-            i += 1
-        board_rows.append(row)
-    empty_board = [" " * 11 for _ in range(6)]
-    while len(board_rows[-1]) % cols != 0:
-        board_rows[-1].append(empty_board)
-    print(("═"*13+"╦") * (cols-1) + ("═"*13))
-    text_rows = []
-    for board_row in board_rows:
-        lines = []
-        for line_index in range(6):
-            line = " " + " ║ ".join(board[line_index] for board in board_row) + " "
-            lines.append(line)
-        text_rows.append("\n".join(lines))
-    row_separator = "\n" + ("═"*13+"╬") * (cols-1) + ("═"*13) + "\n"
-    print(row_separator.join(text_rows))
-    footer = ("═"*13+"╩") * (cols-1) + ("═"*13)
-    print(footer)
-
-def main_image(name):
-    board, actions = get_board_and_actions(name)
-    images = [board.image()]
-    for action in actions:
-        board = board.apply_action(action)
-        images.append(board.image())
+def image_solution(name):
+    solution, search_tree = find_solution(name)
+    images = [board.image() for board in solution]
     name_length = 4+len(str(len(images)-1))
+    print(f"### search_tree has {len(search_tree.nodes)} nodes")
     OUTPUT_DIR = os.path.join("boards",f"{name}_solution")
     try: shutil.rmtree(OUTPUT_DIR)
     except FileNotFoundError: pass
@@ -380,47 +315,47 @@ def main_image(name):
         file_name = f"{i}.jpg".rjust(name_length,"0")
         path = os.path.join(OUTPUT_DIR,file_name)
         image.save(path,quality=100)
+    return solution, search_tree
 
 # graphing the state space
 #════════════════════════════════════════
 
-def get_graph():
-    board = get_board()
-    return board.state_space()
-
-def graph_org_mode(graph):
+def graph_org_mode(board):
+    graph = board.state_space
     lines = ["#+TODO: INITIAL SOLUTION"]
     for node,attrs in graph.nodes.items():
-        state_id = attrs["id"]
+        board_id = attrs["id"]
         line = None
-        if attrs.get("initial"):
-            line = f"* INITIAL {state_id}"
+        if node is board:
+            line = f"* INITIAL {board_id}"
         elif attrs.get("is_solution"):
-            line = f"* SOLUTION {state_id}"
+            line = f"* SOLUTION {board_id}"
         else:
-            line = f"* {state_id}"
+            line = f"* {board_id}"
         lines.append(line)
         for neighbor in graph.neighbors(node):
             neigh_id = graph.nodes[neighbor]["id"]
             lines.append(f"** [[{neigh_id}]]")
     return "\n".join(lines)
 
-def graph_plt(graph):
+def graph_plt(board):
     import matplotlib.pyplot as plt
-    networkx.draw(graph)
+    graph = board.state_space
+    nx.draw(graph)
     plt.show()
     
-def graph_dot(graph):
+def graph_dot(board):
+    graph = board.state_space
     lines = ["graph {"]
     for node,attrs in graph.nodes.items():
-        state_id = attrs["id"]
-        if attrs.get("initial"):
+        board_id = attrs["id"]
+        if node is board:
             color = "red"
         elif attrs.get("is_solution"):
             color = "blue"
         else:
             color = "white"
-        lines.append(f'    {state_id} [label="", color={color}];')
+        lines.append(f'    {board_id} [label="", color={color}];')
     for (v1,v2),attrs in graph.edges.items():
         id1, id2 = graph.nodes[v1]["id"], graph.nodes[v2]["id"]
         lines.append(f'    {id1}--{id2};')
