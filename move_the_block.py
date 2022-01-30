@@ -75,12 +75,9 @@ class Board:
 
     @property
     def image(self):
-        board_img = BoardImage()
-        for (row,col),block in self.blocks:
-            orient = "G" if block is self.goal_block else block.orient
-            block_type = f"{orient}{block.size}"
-            board_img.draw(block_type,(col,row))
-        return board_img.board
+        bimg = BoardImage(self)
+        bimg.draw()
+        return bimg.img
 
     @property
     def state_space(self):
@@ -290,6 +287,7 @@ class BoardImage:
 
     @classmethod
     def create_board_image(cls):
+        "The script used to create board.tiff"
         square = Image.open("square.jpg")
         unit_length = square.width
         side_length = unit_length * 6 - 5
@@ -305,10 +303,18 @@ class BoardImage:
         return ((cls.UNIT_LENGTH-1)*x,
                 (cls.UNIT_LENGTH-1)*y)
 
-    def __init__(self):
-        self.board = self.BOARD.copy()
-        
-    def draw(self,type,xy):
+    def __init__(self, board):
+        self.img = self.BOARD.copy()
+        self.board = board
+
+    def draw(self):
+        board = self.board
+        for (row,col),block in board.blocks:
+            orient = "G" if block is board.goal_block else block.orient
+            block_type = f"{orient}{block.size}"
+            self.draw_block(block_type,(col,row))
+
+    def draw_block(self,type,xy):
         """Draw a block on SELF at XY. TYPE is a string of the form "OS", where
         the "O" is the orientation ("H" for horizontal, "V" for vertical and "G"
         for goal block) and the "S" is the size, one of "2" or "3". So a
@@ -327,7 +333,7 @@ class BoardImage:
         y_offset = (frame_height-block_img.height)//2
         x += x_offset
         y += y_offset
-        self.board.paste(block_img,(x,y))
+        self.img.paste(block_img,(x,y))
 
 # misc
 #════════════════════════════════════════
