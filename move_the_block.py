@@ -203,17 +203,20 @@ class Board:
         return result
 
 class Searcher:
-    def __init__(self,board):
+    def __init__(self,board,hooks=False):
         self.board = board
+        self.hooks = hooks
         
     def bfs(self):
         """Returns a sequence of states beginning with SELF.BOARD and ending
-        with a goal state, as well as the search tree as it was at the time the
+        with a goal state, as well as the search tree as it is at the time the
         solution was found."""
-        search_tree = nx.DiGraph()
+        self.search_tree = search_tree = nx.DiGraph()
         search_tree.add_node(self.board)
+        search_tree.graph["root"] = self.board
         frontier = deque([self.board])
         expanded = set()
+        if self.hooks: self.before_search()
         while frontier:
             board = frontier.popleft()
             if board in expanded:
@@ -221,18 +224,38 @@ class Searcher:
             for successor in board.successors:
                 if successor.is_solution:
                     search_tree.add_edge(board,successor)
+                    if self.hooks: self.added_edge(board,successor)
                     path = [successor]
                     while board is not None:
                         path.append(board)
                         board = next(search_tree.predecessors(board),None)
                     path.reverse()
+                    if self.hooks: self.after_search()
                     return path, search_tree
                 elif (successor not in search_tree.nodes and
                       successor not in expanded):
                     search_tree.add_edge(board,successor)
+                    if self.hooks: self.added_edge(board,successor)
                     frontier.append(successor)
             expanded.add(board)
+        if self.hooks: self.after_search()
         return None, search_tree
+
+    # hooks
+    #════════════════════════════════════════
+    
+    def before_search(self):
+        self._sexps = []
+
+    def after_search(self):
+        lines = ["("]
+        lines.extend(self._sexps)
+        lines.append(")")
+        with open("search_tree_sexps.txt", "w") as f:
+            f.write("\n".join(lines))
+
+    def added_edge(self, parent, child):
+        self._sexps.append(search_tree_sexp(self.search_tree))
 
 # For image output
 class BoardImage:
@@ -294,6 +317,15 @@ class BoardImage:
 
 # misc
 #════════════════════════════════════════
+
+def search_tree_sexp(tree):
+    def node_sexp(node):
+        successors = list(tree.successors(node))
+        if not successors:
+            return "X"
+        strings = itertools.chain(["(X"], map(node_sexp, successors), [")"])
+        return " ".join(strings)
+    return node_sexp(tree.graph["root"])
 
 def get_board(name):
     path = os.path.join("boards",f"{name.lower()}.txt")
@@ -387,4 +419,6 @@ def search_tree_plt(board):
 #════════════════════════════════════════
 
 def scratch():
-    pass
+    board = get_board("extreme_1751")
+    searcher = Searcher(board,hooks=True)
+    searcher.bfs()
